@@ -1,5 +1,5 @@
 ---
-- name: Set hostnames from inventory
+- name: Change Cisco Router Hostname
   hosts: all
   gather_facts: false
   connection: network_cli
@@ -8,31 +8,18 @@
     ansible_network_os: cisco.ios.ios
 
   tasks:
-    - name: Pre-check current hostname
-      cisco.ios.ios_command:
-        commands:
-          - show run | i ^hostname
-      register: pre
-      changed_when: false
+    - name: Ensure new_hostname is provided
+      ansible.builtin.assert:
+        that:
+          - new_hostname is defined
+          - new_hostname | length > 0
+        fail_msg: "You must pass new_hostname (e.g., in AWX Extra Vars or a Survey)."
 
-    - name: Configure hostname to match inventory name
+    - name: Configure hostname
       cisco.ios.ios_config:
         lines:
-          - "hostname {{ inventory_hostname }}"
+          - "hostname {{ new_hostname }}"
 
-    - name: Save running-config to startup-config (only if modified)
+    - name: Save running-config to startup-config
       cisco.ios.ios_config:
         save_when: modified
-
-    - name: Post-check hostname
-      cisco.ios.ios_command:
-        commands:
-          - show run | i ^hostname
-      register: post
-      changed_when: false
-
-    - name: Show before/after
-      ansible.builtin.debug:
-        msg:
-          - "Before: {{ pre.stdout[0] | default('N/A') }}"
-          - "After : {{ post.stdout[0] | default('N/A') }}"
