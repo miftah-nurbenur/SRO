@@ -2,8 +2,6 @@
 - name: Change Cisco Router Hostname
   hosts: all
   gather_facts: false
-
-  # Best practice for Cisco IOS over SSH
   connection: network_cli
 
   vars:
@@ -17,7 +15,7 @@
           - new_hostname | length > 0
         fail_msg: "You must pass new_hostname (e.g., in AWX Extra Vars or a Survey)."
 
-    - name: Configure hostname (idempotent)
+    - name: Configure hostname
       cisco.ios.ios_config:
         lines:
           - "hostname {{ new_hostname }}"
