@@ -6,16 +6,15 @@
 
   vars:
     ansible_network_os: cisco.ios.ios
-
-    loop_ip: "{{ loop_ip | default('2.2.2.2') }}"
-    loop_mask: "{{ loop_mask | default('255.255.255.255') }}"
+    loop_ip_default: "2.2.2.2"
+    loop_mask_default: "255.255.255.255"
 
   tasks:
     - name: Configure Loopback0
       cisco.ios.ios_config:
+        parents: "interface Loopback0"
         lines:
-          - ip address {{ loop_ip }} {{ loop_mask }}
-        parents: interface Loopback0
+          - "ip address {{ loop_ip | default(loop_ip_default) }} {{ loop_mask | default(loop_mask_default) }}"
 
     - name: Save running-config
       cisco.ios.ios_config:
@@ -24,7 +23,7 @@
     - name: Verify Loopback0
       cisco.ios.ios_command:
         commands:
-          - show ip interface brief | include Loopback0
+          - "show ip interface brief | include Loopback0"
       register: verify
       changed_when: false
 
