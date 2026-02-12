@@ -1,0 +1,38 @@
+---
+- name: Create local admin user sro-fop on Cisco IOS routers
+  hosts: all
+  gather_facts: false
+  connection: network_cli
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+    new_user: "sro-fop"
+    priv_level: 15
+
+  tasks:
+    - name: Ensure required variables exist
+      ansible.builtin.assert:
+        that:
+          - user_password is defined
+          - user_password | length > 0
+        fail_msg: "You must pass user_password in AWX Extra Vars or a Survey."
+
+    # Creates/updates user with privilege 15 and a secret password (hash handled by device)
+    - name: Configure local user
+      cisco.ios.ios_config:
+        lines:
+          - "username {{ new_user }} privilege {{ priv_level }} secret {{ user_password }}"
+
+    - name: Save running-config
+      cisco.ios.ios_config:
+        save_when: modified
+
+    - name: Verify user exists
+      cisco.ios.ios_command:
+        commands:
+          - "show run | include ^username {{ new_user }} "
+      register: verify
+      changed_when: false
+
+    - debug:
+        var: verify.stdout_lines
