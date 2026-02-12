@@ -1,0 +1,37 @@
+---
+- name: Configure NTP on Cisco routers (same settings)
+  hosts: all
+  gather_facts: false
+  connection: network_cli
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+
+    # Same settings for all routers
+    ntp_servers:
+      - "10.201.9.10"
+      - "1.1.1.1"
+    ntp_source_intf: "Loopback0"
+
+  tasks:
+    - name: Configure NTP servers and source interface
+      cisco.ios.ios_config:
+        lines: |
+          ntp source {{ ntp_source_intf }}
+          {% for s in ntp_servers %}
+          ntp server {{ s }}
+          {% endfor %}
+
+    - name: Save running-config
+      cisco.ios.ios_config:
+        save_when: modified
+
+    - name: Verify NTP configuration
+      cisco.ios.ios_command:
+        commands:
+          - "show run | include ^ntp"
+      register: verify
+      changed_when: false
+
+    - debug:
+        var: verify.stdout_lines
