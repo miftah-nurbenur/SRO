@@ -1,0 +1,37 @@
+---
+- name: Configure loopbacks per device
+  hosts: all
+  gather_facts: false
+  connection: network_cli
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+
+  tasks:
+    - name: Ensure loopbacks list is provided for this host
+      ansible.builtin.assert:
+        that:
+          - loopbacks is defined
+          - loopbacks | length > 0
+        fail_msg: "Define loopbacks for this host in Inventory variables."
+
+    - name: Configure loopback interfaces
+      cisco.ios.ios_config:
+        parents: "interface Loopback{{ item.id }}"
+        lines:
+          - "ip address {{ item.ip }} {{ item.mask | default('255.255.255.255') }}"
+      loop: "{{ loopbacks }}"
+
+    - name: Save running-config
+      cisco.ios.ios_config:
+        save_when: modified
+
+    - name: Verify loopbacks
+      cisco.ios.ios_command:
+        commands:
+          - "show ip interface brief | include Loopback"
+      register: verify
+      changed_when: false
+
+    - debug:
+        var: verify.stdout_lines
