@@ -1,5 +1,5 @@
 ---
-- name: Configure loopbacks per device
+- name: Configure Loopbacks per router
   hosts: all
   gather_facts: false
   connection: network_cli
@@ -8,12 +8,12 @@
     ansible_network_os: cisco.ios.ios
 
   tasks:
-    - name: Ensure loopbacks list is provided for this host
+    - name: Ensure loopbacks are defined for this host
       ansible.builtin.assert:
         that:
           - loopbacks is defined
           - loopbacks | length > 0
-        fail_msg: "Define loopbacks for this host in Inventory variables."
+        fail_msg: "Define loopbacks for this host in Inventory host vars."
 
     - name: Configure loopback interfaces
       cisco.ios.ios_config:
