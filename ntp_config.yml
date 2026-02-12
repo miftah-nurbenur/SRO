@@ -12,12 +12,23 @@
     ntp_source_intf: "Loopback0"
 
   tasks:
-    - name: Configure NTP servers and source interface
+    - name: Configure NTP servers (supported everywhere)
+      cisco.ios.ios_config:
+        lines:
+          - "ntp server {{ ntp_servers[0] }}"
+          - "ntp server {{ ntp_servers[1] }}"
+
+    - name: Try to configure NTP source interface (skip if unsupported)
       cisco.ios.ios_config:
         lines:
           - "ntp source {{ ntp_source_intf }}"
-          - "ntp server {{ ntp_servers[0] }}"
-          - "ntp server {{ ntp_servers[1] }}"
+      register: ntp_source_result
+      failed_when: false
+
+    - name: Show if NTP source was skipped due to IOS support
+      ansible.builtin.debug:
+        msg: "NTP source command not supported on this device, continuing."
+      when: ntp_source_result is failed
 
     - name: Save running-config
       cisco.ios.ios_config:
