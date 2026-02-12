@@ -1,31 +1,36 @@
 ---
-- name: Configure Loopback0 on Cisco Router
+- name: Configure Loopbacks on Cisco Router
   hosts: all
   gather_facts: false
   connection: network_cli
 
   vars:
     ansible_network_os: cisco.ios.ios
-    loop_ip_default: "2.2.2.2"
-    loop_mask_default: "255.255.255.255"
+
+    loopbacks:
+      - { id: 0,  ip: "2.2.2.2",       mask: "255.255.255.255" }
+      - { id: 10, ip: "10.10.10.10",   mask: "255.255.255.255" }
+      - { id: 20, ip: "20.20.20.20",   mask: "255.255.255.255" }
 
   tasks:
-    - name: Configure Loopback0
+    - name: Configure loopback interfaces
       cisco.ios.ios_config:
-        parents: "interface Loopback0"
+        parents: "interface Loopback{{ item.id }}"
         lines:
-          - "ip address {{ loop_ip | default(loop_ip_default) }} {{ loop_mask | default(loop_mask_default) }}"
+          - "ip address {{ item.ip }} {{ item.mask }}"
+      loop: "{{ loopbacks }}"
 
     - name: Save running-config
       cisco.ios.ios_config:
         save_when: modified
 
-    - name: Verify Loopback0
+    - name: Verify loopbacks
       cisco.ios.ios_command:
         commands:
-          - "show ip interface brief | include Loopback0"
+          - "show ip interface brief | include Loopback0|Loopback10|Loopback20"
       register: verify
       changed_when: false
 
-    - debug:
+    - name: Show verification output
+      ansible.builtin.debug:
         var: verify.stdout_lines
