@@ -1,0 +1,70 @@
+---
+- name: Backup Cisco IOS running & startup config (all routers in inventory)
+  hosts: all
+  gather_facts: false
+  connection: network_cli
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+    backup_dir: "/runner/artifacts/config-backups"   # inside AWX job container
+
+  tasks:
+    - name: Ensure backup directory exists
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Get timestamp (once per host)
+      ansible.builtin.set_fact:
+        backup_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      delegate_to: localhost
+
+    - name: Get running-config
+      cisco.ios.ios_command:
+        commands:
+          - "show running-config"
+      register: running_cfg
+
+    - name: Get startup-config
+      cisco.ios.ios_command:
+        commands:
+          - "show startup-config"
+      register: startup_cfg
+
+    - name: Save running-config (timestamped)
+      ansible.builtin.copy:
+        content: "{{ running_cfg.stdout[0] }}\n"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-running.cfg"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Save startup-config (timestamped)
+      ansible.builtin.copy:
+        content: "{{ startup_cfg.stdout[0] }}\n"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-startup.cfg"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Save running-config (LATEST)
+      ansible.builtin.copy:
+        content: "{{ running_cfg.stdout[0] }}\n"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}-LATEST-running.cfg"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Save startup-config (LATEST)
+      ansible.builtin.copy:
+        content: "{{ startup_cfg.stdout[0] }}\n"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}-LATEST-startup.cfg"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Show backup file paths
+      ansible.builtin.debug:
+        msg:
+          - "RUNNING : {{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-running.cfg"
+          - "STARTUP : {{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-startup.cfg"
+          - "LATEST  : {{ backup_dir }}/{{ inventory_hostname }}-LATEST-running.cfg"
+          - "LATEST  : {{ backup_dir }}/{{ inventory_hostname }}-LATEST-startup.cfg"
