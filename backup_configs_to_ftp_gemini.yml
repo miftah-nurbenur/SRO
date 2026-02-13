@@ -1,3 +1,4 @@
+
 ---
 - name: Backup Cisco IOS configs and Upload to FTP
   hosts: all
@@ -6,7 +7,6 @@
 
   vars:
     ansible_network_os: cisco.ios.ios
-    # Local workspace on the Ansible controller (AWX)
     backup_root: "/tmp/config-backups"
     timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
     archive_file: "network_backups_{{ timestamp }}.tar.gz"
@@ -14,7 +14,7 @@
     # FTP Details
     ftp_host: "10.201.6.41"
     ftp_user: "netadmin"
-    ftp_pass: "testing@123" # Fixed case sensitivity from your prompt
+    ftp_pass: "testing@123"
     ftp_remote_dir: "config-backups"
 
   tasks:
@@ -26,32 +26,27 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Fetch Running Config
-      cisco.ios.ios_config:
-        backup: yes
-        backup_options:
-          filename: "{{ inventory_hostname }}-running.cfg"
-          dir_path: "{{ backup_root }}/{{ timestamp }}"
-      register: backup_info
-
-    - name: Fetch Startup Config
+    - name: Get running and startup configs
       cisco.ios.ios_command:
         commands:
+          - show running-config
           - show startup-config
-      register: start_cfg
+      register: device_configs
+
+    - name: Save Running Config to local file
+      ansible.builtin.copy:
+        content: "{{ device_configs.stdout[0] }}"
+        dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-running.cfg"
+      delegate_to: localhost
 
     - name: Save Startup Config to local file
       ansible.builtin.copy:
-        content: "{{ start_cfg.stdout[0] }}"
+        content: "{{ device_configs.stdout[1] }}"
         dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-startup.cfg"
-        mode: "0644"
       delegate_to: localhost
 
-    - name: Create compressed archive of all backups
-      community.general.archive:
-        path: "{{ backup_root }}/{{ timestamp }}"
-        dest: "{{ backup_root }}/{{ archive_file }}"
-        format: gz
+    - name: Create compressed archive (using shell)
+      ansible.builtin.shell: "tar -czf {{ backup_root }}/{{ archive_file }} -C {{ backup_root }}/{{ timestamp }} ."
       delegate_to: localhost
       run_once: true
 
@@ -63,7 +58,7 @@
       run_once: true
       no_log: true
 
-    - name: Cleanup local files (Optional)
+    - name: Cleanup local files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -71,10 +66,4 @@
         - "{{ backup_root }}/{{ timestamp }}"
         - "{{ backup_root }}/{{ archive_file }}"
       delegate_to: localhost
-      run_once: true
-
-    - name: Publish AWX Artifacts
-      ansible.builtin.set_stats:
-        data:
-          ftp_target: "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/{{ archive_file }}"
       run_once: true
