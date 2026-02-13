@@ -7,11 +7,11 @@
   vars:
     ansible_network_os: cisco.ios.ios
     backup_root: "/tmp/config-backups"
-    
-    # FTP Details - DOUBLE CHECK CASE SENSITIVITY
+
+    # FTP Details - Ensuring lowercase as per your text prompt
     ftp_host: "10.201.6.41"
     ftp_user: "netadmin"
-    ftp_pass: "testing@123" 
+    ftp_pass: "Testing@123"
     ftp_remote_dir: "config-backups"
 
   tasks:
@@ -41,18 +41,13 @@
           - show startup-config
       register: device_configs
 
-    - name: Save Running Config to local file
+    - name: Save configs locally
       ansible.builtin.copy:
-        content: "{{ device_configs.stdout[0] }}"
-        dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-running.cfg"
-        mode: "0644"
-      delegate_to: localhost
-
-    - name: Save Startup Config to local file
-      ansible.builtin.copy:
-        content: "{{ device_configs.stdout[1] }}"
-        dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-startup.cfg"
-        mode: "0644"
+        content: "{{ item.content }}"
+        dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-{{ item.suffix }}.cfg"
+      loop:
+        - { content: "{{ device_configs.stdout[0] }}", suffix: "running" }
+        - { content: "{{ device_configs.stdout[1] }}", suffix: "startup" }
       delegate_to: localhost
 
     - name: Create compressed archive
@@ -62,17 +57,22 @@
 
     - name: Upload archive to FTP
       ansible.builtin.shell: >
-        curl --fail --ftp-pasv --disable-epsv --ftp-create-dirs 
+        curl --fail --ftp-pasv --disable-epsv --ftp-create-dirs
         --user '{{ ftp_user }}:{{ ftp_pass }}'
         -T "{{ backup_root }}/{{ archive_file }}"
         "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/"
       delegate_to: localhost
       run_once: true
       register: ftp_upload
-      # no_log is disabled so you can see the error if login fails again
-      no_log: false
+      ignore_errors: true
 
-    - name: Cleanup local temporary files
+    - name: Diagnostic - If upload failed, show server response
+      ansible.builtin.debug:
+        msg: "FTP Error Detected. Check if password '{{ ftp_pass }}' is correct for user '{{ ftp_user }}' on the FTP server."
+      when: ftp_upload.rc != 0
+      run_once: true
+
+    - name: Cleanup local files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -80,13 +80,5 @@
         - "{{ backup_root }}/{{ timestamp }}"
         - "{{ backup_root }}/{{ archive_file }}"
       delegate_to: localhost
-      run_once: true
-      when: ftp_upload.rc == 0
-
-    - name: Publish Success Info
-      ansible.builtin.set_stats:
-        data:
-          status: "Success"
-          ftp_path: "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/{{ archive_file }}"
       run_once: true
       when: ftp_upload.rc == 0
