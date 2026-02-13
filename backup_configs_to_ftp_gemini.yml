@@ -7,6 +7,7 @@
   vars:
     ansible_network_os: cisco.ios.ios
     backup_root: "/tmp/config-backups"
+    
     # FTP Details
     ftp_host: "10.201.6.41"
     ftp_user: "netadmin"
@@ -33,7 +34,7 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Get running and startup configs
+    - name: Get running and startup configs from Routers
       cisco.ios.ios_command:
         commands:
           - show running-config
@@ -44,12 +45,14 @@
       ansible.builtin.copy:
         content: "{{ device_configs.stdout[0] }}"
         dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-running.cfg"
+        mode: "0644"
       delegate_to: localhost
 
     - name: Save Startup Config to local file
       ansible.builtin.copy:
         content: "{{ device_configs.stdout[1] }}"
         dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-startup.cfg"
+        mode: "0644"
       delegate_to: localhost
 
     - name: Create compressed archive
@@ -58,9 +61,36 @@
       run_once: true
 
     - name: Upload archive to FTP
-      ansible.builtin.command: >
-        curl --fail --ftp-create-dirs -T "{{ backup_root }}/{{ archive_file }}"
-        "ftp://{{ ftp_user }}:{{ ftp_pass }}@{{ ftp_host }}/{{ ftp_remote_dir }}/"
+      ansible.builtin.shell: >
+        curl --fail --ftp-create-dirs 
+        --user "{{ ftp_user }}:{{ ftp_pass }}"
+        -T "{{ backup_root }}/{{ archive_file }}"
+        "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/"
       delegate_to: localhost
       run_once: true
+      register: ftp_upload
+      ignore_errors: true
       no_log: true
+
+    - name: Check for FTP Upload Failure
+      ansible.builtin.fail:
+        msg: "FTP Upload Failed! Check network connectivity to {{ ftp_host }} or credentials for {{ ftp_user }}."
+      when: ftp_upload.rc != 0
+      run_once: true
+
+    - name: Cleanup local temporary files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ backup_root }}/{{ timestamp }}"
+        - "{{ backup_root }}/{{ archive_file }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Publish Success Info
+      ansible.builtin.set_stats:
+        data:
+          status: "Success"
+          ftp_path: "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/{{ archive_file }}"
+      run_once: true
