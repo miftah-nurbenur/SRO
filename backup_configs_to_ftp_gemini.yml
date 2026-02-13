@@ -10,7 +10,6 @@
     backup_root: "/tmp/config-backups"
     timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
     archive_file: "network_backups_{{ timestamp }}.tar.gz"
-    
     # FTP Details
     ftp_host: "10.201.6.41"
     ftp_user: "netadmin"
