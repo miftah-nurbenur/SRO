@@ -49,10 +49,12 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Upload archive to FTP
+    - name: Upload backup archive to FTP (once)
       ansible.builtin.command: >
-        curl --fail --ftp-create-dirs -T "{{ backup_root }}/{{ archive_file }}"
-        "ftp://{{ ftp_user }}:{{ ftp_pass }}@{{ ftp_host }}/{{ ftp_remote_dir }}/"
+        curl --fail --ftp-create-dirs 
+        -u "{{ ftp_user }}:{{ ftp_pass }}"
+        -T "{{ backup_root }}/{{ archive_file }}"
+        "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/"
       delegate_to: localhost
       run_once: true
       no_log: true
