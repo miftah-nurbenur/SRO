@@ -7,8 +7,6 @@
   vars:
     ansible_network_os: cisco.ios.ios
     backup_root: "/tmp/config-backups"
-    
-    # FTP Details
     ftp_host: "10.201.6.41"
     ftp_user: "netadmin"
     ftp_pass: "testing@123"
@@ -34,25 +32,23 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Get running and startup configs from Routers
+    - name: Get configs from Routers
       cisco.ios.ios_command:
         commands:
           - show running-config
           - show startup-config
       register: device_configs
 
-    - name: Save Running Config to local file
+    - name: Save Running Config
       ansible.builtin.copy:
         content: "{{ device_configs.stdout[0] }}"
         dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-running.cfg"
-        mode: "0644"
       delegate_to: localhost
 
-    - name: Save Startup Config to local file
+    - name: Save Startup Config
       ansible.builtin.copy:
         content: "{{ device_configs.stdout[1] }}"
         dest: "{{ backup_root }}/{{ timestamp }}/{{ inventory_hostname }}-startup.cfg"
-        mode: "0644"
       delegate_to: localhost
 
     - name: Create compressed archive
@@ -62,23 +58,17 @@
 
     - name: Upload archive to FTP
       ansible.builtin.shell: >
-        curl --fail --ftp-create-dirs 
+        curl --fail --ftp-pasv --ftp-create-dirs 
         --user "{{ ftp_user }}:{{ ftp_pass }}"
         -T "{{ backup_root }}/{{ archive_file }}"
         "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/"
       delegate_to: localhost
       run_once: true
       register: ftp_upload
-      ignore_errors: true
-      no_log: true
+      # I have removed no_log temporarily so you can see the error in your AWX logs
+      # no_log: true 
 
-    - name: Check for FTP Upload Failure
-      ansible.builtin.fail:
-        msg: "FTP Upload Failed! Check network connectivity to {{ ftp_host }} or credentials for {{ ftp_user }}."
-      when: ftp_upload.rc != 0
-      run_once: true
-
-    - name: Cleanup local temporary files
+    - name: Cleanup local files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -88,9 +78,8 @@
       delegate_to: localhost
       run_once: true
 
-    - name: Publish Success Info
-      ansible.builtin.set_stats:
-        data:
-          status: "Success"
-          ftp_path: "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/{{ archive_file }}"
+    - name: Final Status
+      ansible.builtin.debug:
+        msg: "Upload successful: ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/{{ archive_file }}"
+      when: ftp_upload.rc == 0
       run_once: true
