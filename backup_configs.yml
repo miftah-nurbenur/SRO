@@ -6,65 +6,71 @@
 
   vars:
     ansible_network_os: cisco.ios.ios
-    backup_dir: "/runner/artifacts/config-backups"   # inside AWX job container
+    backup_root: "/runner/artifacts/config-backups"
 
   tasks:
-    - name: Ensure backup directory exists
+    - name: Ensure backup directory exists (on runner)
+      delegate_to: localhost
+      run_once: true
       ansible.builtin.file:
-        path: "{{ backup_dir }}"
+        path: "{{ backup_root }}"
         state: directory
         mode: "0755"
-      delegate_to: localhost
 
     - name: Get timestamp (once per host)
-      ansible.builtin.set_fact:
-        backup_ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
       delegate_to: localhost
+      ansible.builtin.set_fact:
+        ts: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
 
     - name: Get running-config
       cisco.ios.ios_command:
         commands:
           - "show running-config"
-      register: running_cfg
+      register: run_cfg
+      changed_when: false
 
     - name: Get startup-config
       cisco.ios.ios_command:
         commands:
           - "show startup-config"
-      register: startup_cfg
+      register: start_cfg
+      changed_when: false
 
     - name: Save running-config (timestamped)
-      ansible.builtin.copy:
-        content: "{{ running_cfg.stdout[0] }}\n"
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-running.cfg"
-        mode: "0644"
       delegate_to: localhost
+      ansible.builtin.copy:
+        content: "{{ run_cfg.stdout[0] | default('') }}"
+        dest: "{{ backup_root }}/{{ inventory_hostname }}-running-{{ ts }}.cfg"
+        mode: "0644"
 
     - name: Save startup-config (timestamped)
-      ansible.builtin.copy:
-        content: "{{ startup_cfg.stdout[0] }}\n"
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-startup.cfg"
-        mode: "0644"
       delegate_to: localhost
-
-    - name: Save running-config (LATEST)
       ansible.builtin.copy:
-        content: "{{ running_cfg.stdout[0] }}\n"
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}-LATEST-running.cfg"
+        content: "{{ start_cfg.stdout[0] | default('') }}"
+        dest: "{{ backup_root }}/{{ inventory_hostname }}-startup-{{ ts }}.cfg"
         mode: "0644"
-      delegate_to: localhost
 
-    - name: Save startup-config (LATEST)
-      ansible.builtin.copy:
-        content: "{{ startup_cfg.stdout[0] }}\n"
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}-LATEST-startup.cfg"
-        mode: "0644"
+    - name: Create compressed archive of all backups (once)
       delegate_to: localhost
+      run_once: true
+      ansible.builtin.shell: |
+        cd /runner/artifacts && \
+        tar czf config-backups-{{ lookup('pipe','date +%Y%m%d-%H%M%S') }}.tar.gz config-backups
+      args:
+        executable: /bin/bash
 
-    - name: Show backup file paths
-      ansible.builtin.debug:
-        msg:
-          - "RUNNING : {{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-running.cfg"
-          - "STARTUP : {{ backup_dir }}/{{ inventory_hostname }}-{{ backup_ts }}-startup.cfg"
-          - "LATEST  : {{ backup_dir }}/{{ inventory_hostname }}-LATEST-running.cfg"
-          - "LATEST  : {{ backup_dir }}/{{ inventory_hostname }}-LATEST-startup.cfg"
+    - name: Find latest backup archive
+      delegate_to: localhost
+      run_once: true
+      ansible.builtin.shell: |
+        ls -1t /runner/artifacts/config-backups-*.tar.gz | head -1
+      register: archive_path
+      changed_when: false
+
+    - name: Publish artifact paths to AWX (shows in Job -> Details -> Artifacts)
+      delegate_to: localhost
+      run_once: true
+      ansible.builtin.set_stats:
+        data:
+          backup_directory: "{{ backup_root }}"
+          backup_archive: "{{ archive_path.stdout | trim }}"
