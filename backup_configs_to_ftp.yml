@@ -1,0 +1,84 @@
+---
+- name: Backup Cisco IOS configs (running & startup), archive, and upload to FTP
+  hosts: all
+  gather_facts: false
+  connection: network_cli
+
+  vars:
+    ansible_network_os: cisco.ios.ios
+
+    # Local (inside AWX execution env) workspace
+    backup_root: "/tmp/config-backups"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+    archive_path: "/tmp/config-backups-{{ timestamp }}.tar.gz"
+
+    # FTP target
+    ftp_host: "10.201.6.41"
+    ftp_user: "netadmin"
+    ftp_pass: "Testing@123"
+    ftp_remote_dir: "config-backups"
+
+  tasks:
+    - name: Ensure per-host backup directory exists (on controller)
+      ansible.builtin.file:
+        path: "{{ backup_root }}/{{ inventory_hostname }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: Get running-config
+      cisco.ios.ios_command:
+        commands:
+          - "show running-config"
+      register: run_cfg
+      changed_when: false
+
+    - name: Get startup-config
+      cisco.ios.ios_command:
+        commands:
+          - "show startup-config"
+      register: start_cfg
+      changed_when: false
+
+    - name: Save running-config to file (on controller)
+      ansible.builtin.copy:
+        dest: "{{ backup_root }}/{{ inventory_hostname }}/{{ inventory_hostname }}-running-{{ timestamp }}.cfg"
+        content: "{{ run_cfg.stdout[0] }}\n"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Save startup-config to file (on controller)
+      ansible.builtin.copy:
+        dest: "{{ backup_root }}/{{ inventory_hostname }}/{{ inventory_hostname }}-startup-{{ timestamp }}.cfg"
+        content: "{{ start_cfg.stdout[0] }}\n"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Create compressed archive of all backups (once)
+      run_once: true
+      delegate_to: localhost
+      ansible.builtin.shell: |
+        tar czf "{{ archive_path }}" -C "{{ backup_root }}" .
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Upload backup archive to FTP (once)
+      run_once: true
+      delegate_to: localhost
+      ansible.builtin.command: >
+        bash -lc 'curl --fail --ftp-create-dirs
+        -T "{{ archive_path }}"
+        "ftp://{{ ftp_user }}:{{ ftp_pass }}@{{ ftp_host }}/{{ ftp_remote_dir }}/"'
+      no_log: true
+      changed_when: true
+
+    - name: Publish info to AWX artifacts (visible in Job -> Details -> Artifacts)
+      run_once: true
+      delegate_to: localhost
+      ansible.builtin.set_stats:
+        data:
+          backup_local_dir: "{{ backup_root }}"
+          backup_archive: "{{ archive_path }}"
+          ftp_target: "ftp://{{ ftp_host }}/{{ ftp_remote_dir }}/"
+          ftp_uploaded_filename: "{{ archive_path | basename }}"
